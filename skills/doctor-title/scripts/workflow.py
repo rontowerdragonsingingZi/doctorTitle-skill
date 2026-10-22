@@ -248,6 +248,21 @@ def similarity(draft, context):
             "nearest": comparisons[:5], "algorithm": VERSION}
 
 
+def reader_article_errors(article):
+    errors = []
+    if re.search(r"https?://|www\.", article, re.I) or re.search(r"\[[^\]]+\]\([^)]+\)", article):
+        errors.append("Reader article must not contain links or URLs; keep sources in sources.")
+    if re.search(r"(?m)^\s*#{1,6}\s|^\s*[-*]\s|\*\*", article):
+        errors.append("Reader article must be plain prose: no Markdown headings, lists, or bold.")
+    for phrase in ("事实依据", "急症依据", "不能直接当作病名", "并不能直接推出", "直接翻译成", "诊断标签"):
+        if phrase in article:
+            errors.append(f"Prompt-like wording leaked into article: {phrase}")
+    count = len(re.findall(r"[\u4e00-\u9fff]", article.replace(DISCLAIMER, "")))
+    if not 560 <= count <= 620:
+        errors.append(f"Article must contain 560-620 Chinese characters, target 600, excluding disclaimer; got {count}.")
+    return errors
+
+
 def content_errors(draft, final=False):
     errors = []
     if not isinstance(draft, dict):
@@ -265,6 +280,8 @@ def content_errors(draft, final=False):
         errors.append("features must be distinct after normalization.")
     if "article" in draft and not isinstance(draft["article"], str):
         errors.append("article must be a string.")
+    elif isinstance(draft.get("article"), str) and draft["article"].strip():
+        errors.extend(reader_article_errors(draft["article"]))
     banner = draft.get("banner_text", [])
     if not isinstance(banner, list) or any(not isinstance(s, str) or not s.strip() for s in banner):
         errors.append("banner_text must be an array of nonempty visible strings.")

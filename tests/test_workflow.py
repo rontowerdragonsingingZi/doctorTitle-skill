@@ -19,12 +19,17 @@ w = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(w)
 
 
+def fixture_article(repeats=24):
+    unit = "这是软件测试文本只用于校验字数不作为医学内容发布"
+    return "。".join([unit] * repeats) + "。"
+
+
 def draft():
     return {
         "title": "排尿后仍有尿意？先记录伴随变化，不要急着自己猜",
         "category": "prostate", "summary": "排尿后仍感尿意的读者记录伴随表现，了解就诊沟通边界。",
         "features": ["排尿后尿意", "记录伴随表现", "不凭症状猜病", "就诊沟通边界"],
-        "article": "这是一份仅用于软件测试的文本，不作为医学建议发布。排尿后仍有尿意时，先把出现情境和伴随变化记录清楚，不能只凭一种感觉自行判断原因。持续不适请就医评估。",
+        "article": fixture_article(),
         "banner_text": ["排尿后仍有尿意？", "先记录伴随变化"],
         "palette": "米白暖橙", "image_tool": "no image tool (software test)",
         "image_prompt": "横版16:9医疗科普大字Banner，目标1600x900，允许宽1500-1700、高800-1000像素，米白暖橙配色，大字两行，准确文字：排尿后仍有尿意？先记录伴随变化。原创抽象圆环元素，不使用人物或第三方素材。",
@@ -142,6 +147,22 @@ class WorkflowTests(unittest.TestCase):
         data = b"\xff\xd8\xff\xc0" + struct.pack(">H", len(frame) + 2) + frame + b"\xff\xd9"
         with self.assertRaises(ValueError):
             w.image_info(data)
+
+    def test_reader_article_length_and_plain_prose(self):
+        self.assertEqual(len(__import__("re").findall(r"[\u4e00-\u9fff]", fixture_article())), 576)
+        for repeats in (23, 26):
+            value = draft()
+            value["article"] = fixture_article(repeats)
+            self.assertTrue(w.content_errors(value, final=True))
+        value = draft()
+        value["article"] += "[事实依据](https://example.org/source)"
+        self.assertTrue(any("links" in item for item in w.content_errors(value)))
+        value = draft()
+        value["article"] = "## 原因\n\n" + value["article"]
+        self.assertTrue(any("plain prose" in item for item in w.content_errors(value)))
+        value = draft()
+        value["article"] = value["article"].replace("软件测试", "并不能直接推出", 1)
+        self.assertTrue(any("Prompt-like" in item for item in w.content_errors(value)))
 
     def test_empty_content_cannot_poison_memory(self):
         value = draft()

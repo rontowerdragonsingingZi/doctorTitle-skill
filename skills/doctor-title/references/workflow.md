@@ -44,7 +44,7 @@ python skills/doctor-title/scripts/workflow.py archive --draft .doctor-work/draf
 | `category` | `prostate` / `sexual-function` / `reproductive-infection` / `foreskin-phimosis` / `male-infertility` |
 | `summary` | 真实压缩摘要，不超过 400 字 |
 | `features` | 4 至 8 个不同的具体短语，不包含泛泛大类，不能为过查重随意改写 |
-| `article` | 正文 Markdown，不重复一级标题，由归档器加原始标题；不包含提示词与内部记录 |
+| `article` | 读者正文，5至7个自然段；只统计汉字，去掉免责声明后必须为560–620，目标600。禁止链接、网址、Markdown标题、加粗、列表和提示词口吻；来源只放 `sources`。归档器另加原题和统一免责声明 |
 | `banner_text` | 图片拟显示的全部文案列表；即使跳过图片也应完成文案设计 |
 | `palette` | 本次配色名，不超过 120 字；写入压缩历史，下一次先看近期配色再轮换，不固定暗黑或浅蓝 |
 | `image_tool` | 实际图像工具名；无工具明确写“无可用生图工具”，不虚构工具 |
