@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.venv/
+.doctor-work/
+doctorlist/
+.DS_Store

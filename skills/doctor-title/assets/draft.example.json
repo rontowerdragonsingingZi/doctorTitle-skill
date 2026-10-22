@@ -1,0 +1,22 @@
+{
+  "title": "排尿后仍有尿意，就是前列腺出了问题吗？先把伴随变化说清",
+  "category": "prostate",
+  "summary": "面向排尿后仍感尿意的读者，说明单一感受不能确定病因，建议记录伴随表现，并区分持续不适和尿不出的急症。",
+  "features": ["排尿后仍有尿意", "单一症状不能定病因", "记录伴随表现", "尿不出急症边界"],
+  "article": "",
+  "banner_text": [],
+  "palette": "",
+  "image_tool": "",
+  "image_prompt": "",
+  "image_status": "skipped",
+  "skip_reason": "",
+  "sources": [],
+  "loaded_skills": ["doctor-title", "doctor-article", "doctor-img"],
+  "review": {
+    "medical": false,
+    "compliance": false,
+    "originality": false,
+    "semantic": false,
+    "visual": false
+  }
+}
