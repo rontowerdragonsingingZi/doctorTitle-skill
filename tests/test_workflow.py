@@ -27,7 +27,7 @@ def draft():
         "article": "这是一份仅用于软件测试的文本，不作为医学建议发布。排尿后仍有尿意时，先把出现情境和伴随变化记录清楚，不能只凭一种感觉自行判断原因。持续不适请就医评估。",
         "banner_text": ["排尿后仍有尿意？", "先记录伴随变化"],
         "palette": "米白暖橙", "image_tool": "no image tool (software test)",
-        "image_prompt": "横版16:9医疗科普大字Banner，1920x1080，米白暖橙配色，大字两行，准确文字：排尿后仍有尿意？先记录伴随变化。原创抽象圆环元素，不使用人物或第三方素材。",
+        "image_prompt": "横版16:9医疗科普大字Banner，目标1600x900，允许宽1500-1700、高800-1000像素，米白暖橙配色，大字两行，准确文字：排尿后仍有尿意？先记录伴随变化。原创抽象圆环元素，不使用人物或第三方素材。",
         "image_status": "skipped", "skip_reason": "软件测试未调用生图工具。",
         "sources": [{"title": "Test fixture, not a verified medical source", "url": "https://example.org/test", "claim": "Only a software validation fixture"}],
         "loaded_skills": list(w.SKILLS),
@@ -35,7 +35,7 @@ def draft():
     }
 
 
-def png(width=1280, height=720):
+def png(width=1600, height=900):
     def chunk(kind, body):
         return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xffffffff)
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
@@ -91,14 +91,32 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(Path(result["files"]["image"]).stem, Path(result["files"]["article"]).stem)
         self.assertEqual(len(w.memory(self.root)["history"]), 1)
 
-    def test_wrong_aspect_does_not_commit(self):
-        image = self.root / "square.png"
-        image.write_bytes(png(720, 720))
-        value = draft()
-        value.update(image_status="generated", image_path=str(image))
-        with self.assertRaisesRegex(ValueError, "16:9"):
-            w.archive(self.root, value, w.memory(self.root), self.root)
-        self.assertFalse(w.memory(self.root)["history"])
+    def test_dimensions_within_tolerance_are_accepted(self):
+        for width, height in ((1500, 800), (1500, 1000), (1700, 800), (1700, 1000), (1601, 901)):
+            with self.subTest(width=width, height=height):
+                root = self.root / f"{width}x{height}"
+                root.mkdir()
+                image = root / "source.png"
+                image.write_bytes(png(width, height))
+                value = draft()
+                value.update(image_status="generated", image_path=str(image))
+                result = w.archive(root, value, w.memory(root), root)
+                self.assertTrue(result["ok"], result)
+                manifest = w.load_json(root / result["files"]["manifest"])
+                self.assertEqual(manifest["dimensions"], {"width": width, "height": height})
+                self.assertEqual((root / result["files"]["image"]).read_bytes(), image.read_bytes())
+
+    def test_dimensions_outside_tolerance_do_not_commit(self):
+        for width, height in ((1499, 900), (1701, 900), (1600, 799), (1600, 1001), (1280, 720), (1920, 1080)):
+            with self.subTest(width=width, height=height):
+                image = self.root / "source.png"
+                image.write_bytes(png(width, height))
+                value = draft()
+                value.update(image_status="generated", image_path=str(image))
+                with self.assertRaisesRegex(ValueError, "1500-1700"):
+                    w.archive(self.root, value, w.memory(self.root), self.root)
+                self.assertFalse(w.memory(self.root)["history"])
+                self.assertFalse((self.root / "title").exists())
 
     def test_bad_png_checksum_rejected(self):
         data = bytearray(png())

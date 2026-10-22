@@ -464,8 +464,8 @@ def archive(root, draft, context, draft_dir):
             raise ValueError("Image exceeds the 50 MiB archive limit.")
         data = path.read_bytes()
         extension, width, height = image_info(data)
-        if width < 1280 or height < 720 or width * 9 != height * 16:
-            raise ValueError("Banner must be exactly 16:9 and at least 1280x720 pixels.")
+        if not (1500 <= width <= 1700 and 800 <= height <= 1000):
+            raise ValueError("Banner width must be 1500-1700 pixels and height 800-1000 pixels (inclusive); exact 16:9 is not required.")
         dimensions = {"width": width, "height": height}
     stem = available_stem(root, draft["title"])
     files = {"article": f"title/{stem}.md", "manifest": f"title/{stem}.json",
