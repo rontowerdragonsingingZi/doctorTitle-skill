@@ -254,13 +254,43 @@ def reader_article_errors(article):
         errors.append("Reader article must not contain links or URLs; keep sources in sources.")
     if re.search(r"(?m)^\s*#{1,6}\s|^\s*[-*]\s|\*\*", article):
         errors.append("Reader article must be plain prose: no Markdown headings, lists, or bold.")
-    for phrase in ("事实依据", "急症依据", "不能直接当作病名", "并不能直接推出", "直接翻译成", "诊断标签"):
-        if phrase in article:
+    normalized = normalize(article)
+    for phrase in (
+        "事实依据", "急症依据", "不能直接当作病名", "并不能直接推出", "直接翻译成", "诊断标签",
+        "把下一步放在门诊咨询上", "就诊不需要先证明自己得了什么病",
+        "才便于讨论接下来如何评估", "把所有情况都塞进一句身体被掏空里",
+        "持续的不适和生活困扰是值得认真沟通的需求", "让担心有一个可以说清的地方",
+        "先别把自慰和身体受损画等号", "先别把自慰和身体受损划等号",
+        "没有一条人人都适用的正常线",
+    ):
+        if normalize(phrase) in normalized:
             errors.append(f"Prompt-like wording leaked into article: {phrase}")
     count = len(re.findall(r"[\u4e00-\u9fff]", article.replace(DISCLAIMER, "")))
     if not 560 <= count <= 620:
         errors.append(f"Article must contain 560-620 Chinese characters, target 600, excluding disclaimer; got {count}.")
     return errors
+
+
+def article_style_warnings(article):
+    """Context-sensitive editing hints, not a verdict on authorship or safety."""
+    sentences = [s.strip() for s in re.split(r"[。！？!?\n]+", article) if s.strip()]
+    warnings = []
+    patterns = (
+        ("consultation_padding", 2,
+         r"下一步.{0,12}(?:沟通|评估|安排|咨询)|(?:把|将).{0,14}(?:问题|变化).{0,10}(?:说清|交代|讲清)|备忘录|带上已有|就诊资料",
+         "多句围绕问诊准备或沟通流程；核对是否回答标题。非就诊准备主题不要用此类内容凑篇幅，必要信息仍应保留。"),
+        ("formulaic_contrasts", 2,
+         r"(?:先别|别急着|不要急着).{0,24}(?:划等号|画等号|对号入座)|不是.{0,24}而是|不是结论.{0,6}(?:只是|是)线索",
+         "反复纠偏或对比；检查是否重复同一意思。保留真正区分不同情况的信息，不机械删除否定句。"),
+        ("abstract_closer", 1,
+         r"(?:让|给).{0,12}(?:担心|焦虑|困扰).{0,16}(?:地方|出口|安放|方向)|把这一步安排起来",
+         "检查抒情收尾是否提供新信息；空泛安慰可删除，具体医学条件与行动不可删。"),
+    )
+    for code, minimum, pattern, message in patterns:
+        matches = [s for s in sentences if re.search(pattern, s)]
+        if len(matches) >= minimum:
+            warnings.append({"code": code, "excerpts": matches[:3], "message": message})
+    return warnings
 
 
 def content_errors(draft, final=False):
@@ -319,9 +349,9 @@ def content_errors(draft, final=False):
         if not isinstance(loaded, list) or any(not isinstance(s, str) for s in loaded) or set(loaded) != set(SKILLS):
             errors.append("loaded_skills must attest that all three skills were actually read.")
         review = draft.get("review")
-        required = ["medical", "compliance", "originality", "semantic"] + (["visual"] if status == "generated" else [])
+        required = ["medical", "compliance", "originality", "semantic", "editorial"] + (["visual"] if status == "generated" else [])
         if not isinstance(review, dict) or any(review.get(key) is not True for key in required):
-            errors.append("Required medical/compliance/originality/semantic (and generated image visual) reviews must be true after actual review.")
+            errors.append("Required medical/compliance/originality/semantic/editorial (and generated image visual) reviews must be true after actual review.")
         sources = draft.get("sources")
         if not isinstance(sources, list) or not sources:
             errors.append("At least one verified medical source is required.")
@@ -468,11 +498,13 @@ def available_stem(root, title):
 
 def archive(root, draft, context, draft_dir):
     errors = content_errors(draft, final=True)
+    article = draft.get("article") if isinstance(draft, dict) else None
+    style_warnings = article_style_warnings(article) if isinstance(article, str) else []
     if errors:
-        return {"ok": False, "errors": errors}
+        return {"ok": False, "errors": errors, "style_warnings": style_warnings}
     report = similarity(draft, context)
     if not report["ok"]:
-        return {"ok": False, "errors": ["Similarity exceeds threshold or title duplicates history."], "similarity": report}
+        return {"ok": False, "errors": ["Similarity exceeds threshold or title duplicates history."], "similarity": report, "style_warnings": style_warnings}
     data, dimensions, extension = None, None, None
     if draft["image_status"] == "generated":
         path = Path(draft["image_path"])
@@ -494,9 +526,10 @@ def archive(root, draft, context, draft_dir):
              "category": draft["category"], "summary": draft["summary"], "features": draft["features"],
              "fingerprints": fingerprints(draft), "files": files, "image_status": draft["image_status"],
              "palette": draft["palette"]}
-    manifest = {k: v for k, v in draft.items() if k not in ("article", "image_path")}
+    manifest = {k: v for k, v in draft.items() if k not in ("article", "image_path", "review_notes")}
     manifest.update({"id": record_id, "version": VERSION, "created_at": created_at,
                      "files": files, "dimensions": dimensions, "similarity": report,
+                     "style_warnings": style_warnings,
                      "image_sha256": hashlib.sha256(data).hexdigest() if data else None})
     body = f"# {draft['title']}\n\n{draft['article'].strip()}\n"
     if DISCLAIMER not in body:
@@ -530,7 +563,8 @@ def archive(root, draft, context, draft_dir):
             pending.unlink(missing_ok=True)
         raise
     return {"ok": True, "title": draft["title"], "output_root": str(root), "files": files,
-            "image_status": draft["image_status"], "skip_reason": draft.get("skip_reason"), "similarity": report}
+            "image_status": draft["image_status"], "skip_reason": draft.get("skip_reason"), "similarity": report,
+            "style_warnings": style_warnings}
 
 
 def main(argv=None):
@@ -561,6 +595,8 @@ def main(argv=None):
                         result = archive(root, draft, context, args.draft.resolve().parent)
                     else:
                         result = similarity(draft, context)
+                    article = draft.get("article") if isinstance(draft, dict) else None
+                    result["style_warnings"] = article_style_warnings(article) if isinstance(article, str) else []
     except (OSError, ValueError, KeyError, TypeError, struct.error) as exc:
         result = {"ok": False, "error": str(exc)}
     print(json_text(result), end="")

@@ -36,7 +36,7 @@ def draft():
         "image_status": "skipped", "skip_reason": "软件测试未调用生图工具。",
         "sources": [{"title": "Test fixture, not a verified medical source", "url": "https://example.org/test", "claim": "Only a software validation fixture"}],
         "loaded_skills": list(w.SKILLS),
-        "review": {"medical": True, "compliance": True, "originality": True, "semantic": True, "visual": True},
+        "review": {"medical": True, "compliance": True, "originality": True, "semantic": True, "editorial": True, "visual": True},
     }
 
 
@@ -171,6 +171,89 @@ class WorkflowTests(unittest.TestCase):
         value = draft()
         value["title"] = "!!!"
         self.assertTrue(w.content_errors(value))
+
+    def test_reported_boilerplate_is_rejected(self):
+        for sentence in (
+            "可以把下一步放在门诊咨询上，而不只是继续搜索。",
+            "就诊不需要先证明自己得了什么病。",
+            "把问题交代具体，才便于讨论接下来如何评估。",
+            "不用把所有情况都塞进一句身体被掏空里。",
+            "持续的不适和生活困扰，是值得认真沟通的需求。",
+            "把这一步安排起来，让担心有一个可以说清的地方。",
+            "先别把自慰和身体受损画等号。",
+            "先别把自慰和身体受损划等号。",
+            "对于次数，并没有一条人人都适用的正常线。",
+            "可以把下一步放在\n门诊咨询上。",
+        ):
+            with self.subTest(sentence=sentence):
+                value = draft()
+                value["article"] += sentence
+                self.assertTrue(any("Prompt-like" in error for error in w.content_errors(value)))
+                self.assertFalse(w.archive(self.root, value, w.memory(self.root), self.root)["ok"])
+        self.assertFalse(w.memory(self.root)["history"])
+
+    def test_specific_medical_advice_is_not_a_style_error(self):
+        for sentence in (
+            "突然一侧阴囊剧痛，应立即去急诊。",
+            "尿不出来并伴下腹胀痛，应立即就医。",
+            "有些情况可能需要医生进一步评估。",
+            "自慰次数没有统一标准。",
+            "翻到后方的包皮卡住不能复位，应及时急诊。",
+        ):
+            with self.subTest(sentence=sentence):
+                value = draft()
+                value["article"] += sentence
+                self.assertFalse(w.content_errors(value), w.content_errors(value))
+                self.assertEqual(w.article_style_warnings(value["article"]), [])
+
+    def test_editorial_review_required_only_for_new_archives(self):
+        for approval in (None, False, "true"):
+            with self.subTest(approval=approval):
+                value = draft()
+                value["review"]["editorial"] = approval
+                self.assertFalse(w.content_errors(value))
+                result = w.archive(self.root, value, w.memory(self.root), self.root)
+                self.assertFalse(result["ok"])
+                self.assertTrue(any("editorial" in error for error in result["errors"]))
+                self.assertFalse(w.memory(self.root)["history"])
+        value = draft()
+        result = w.archive(self.root, value, w.memory(self.root), self.root)
+        manifest_path = self.root / result["files"]["manifest"]
+        manifest = w.load_json(manifest_path)
+        manifest["review"].pop("editorial")
+        manifest_path.write_text(w.json_text(manifest), encoding="utf-8")
+        self.assertEqual(len(w.memory(self.root)["history"]), 1)
+
+    def test_style_warnings_are_contextual_not_blanket_bans(self):
+        self.assertEqual(w.article_style_warnings("怕忘的话，可以记在手机备忘录里。"), [])
+        warnings = w.article_style_warnings("可以记在手机备忘录里。带上已有的就诊资料。")
+        self.assertEqual(warnings[0]["code"], "consultation_padding")
+        warnings = w.article_style_warnings("先别把症状对号入座。别急着把检查结果和疾病划等号。")
+        self.assertEqual(warnings[0]["code"], "formulaic_contrasts")
+        warnings = w.article_style_warnings("让焦虑找到一个出口。")
+        self.assertEqual(warnings[0]["code"], "abstract_closer")
+
+    def test_style_warnings_reach_cli_and_manifest_not_article(self):
+        value = draft()
+        value["review_notes"] = "INTERNAL_EDITORIAL_NOTES_DO_NOT_PUBLISH"
+        value["article"] += "怕忘的话，可以记在手机备忘录里。带上已有的就诊资料。"
+        path = self.root / "draft.json"
+        path.write_text(w.json_text(value), encoding="utf-8")
+        for command in ("check", "archive"):
+            with self.subTest(command=command):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    code = w.main([command, "--output-root", str(self.root), "--draft", str(path)])
+                result = json.loads(output.getvalue())
+                self.assertEqual(code, 0, result)
+                self.assertEqual(result["style_warnings"][0]["code"], "consultation_padding")
+        manifest = w.load_json(self.root / result["files"]["manifest"])
+        self.assertEqual(manifest["style_warnings"], result["style_warnings"])
+        self.assertNotIn("review_notes", manifest)
+        body = (self.root / result["files"]["article"]).read_text(encoding="utf-8")
+        self.assertNotIn("consultation_padding", body)
+        self.assertNotIn(value["review_notes"], body)
+        self.assertNotIn("review_notes", w.memory(self.root)["history"][0])
 
     def test_compliance_rules(self):
         for wording in ("据了解", "百分百治愈", "彻底根治", "绝对安全无副作用", "最好", "有效率达到80%", "价格1000元",

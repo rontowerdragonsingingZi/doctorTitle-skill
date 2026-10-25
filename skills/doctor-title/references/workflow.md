@@ -44,7 +44,7 @@ python skills/doctor-title/scripts/workflow.py archive --draft .doctor-work/draf
 | `category` | `prostate` / `sexual-function` / `reproductive-infection` / `foreskin-phimosis` / `male-infertility` |
 | `summary` | 真实压缩摘要，不超过 400 字 |
 | `features` | 4 至 8 个不同的具体短语，不包含泛泛大类，不能为过查重随意改写 |
-| `article` | 读者正文，5至7个自然段；只统计汉字，去掉免责声明后必须为560–620，目标600。禁止链接、网址、Markdown标题、加粗、列表和提示词口吻；来源只放 `sources`。归档器另加原题和统一免责声明 |
+| `article` | 读者正文，通常5至7个自然段，不按固定段落流程填充；只统计汉字，去掉免责声明后必须为560–620，目标600。按article的editorial先写事实、去空话、再核对医学含义。禁止链接、Markdown标题、加粗、列表和提示词口吻；来源只放 `sources`，归档器另加原题和统一免责声明 |
 | `banner_text` | 本次画面实际显示的全部短文案。按所选风格组织，可以是大标题加副题，也可以是标签、清单或底部短句，但不能规定成同一种版式。不写医院名和广告口号 |
 | `palette` | 本次配色名，不超过 120 字。在青蓝立体医疗风和浅色临床海报风之间轮换，并更换强调色；不要连续使用同一版式 |
 | `image_tool` | 实际图像工具名；无工具明确写“无可用生图工具”，不虚构工具 |
@@ -54,9 +54,15 @@ python skills/doctor-title/scripts/workflow.py archive --draft .doctor-work/draf
 | `skip_reason` | `skipped` 时说明工具缺失、权限、失败或质量不合格的真实原因 |
 | `sources` | 至少一个真实事实来源：每项 `title`、`url`、`claim` 非空；公开 HTTPS 链接，`claim` 说明支持的具体主张；不把文风参考当证据 |
 | `loaded_skills` | 已实际读取的三个标准名称 |
-| `review` | `medical`、`compliance`、`originality`、`semantic` 须真实审核后为 true；生成图的 `visual` 也必须 true |
+| `review` | `medical`、`compliance`、`originality`、`semantic`、`editorial` 须真实审核后为 true；生成图的 `visual` 也必须 true。`editorial` 表示整段去空话、处理风格警告并复核未改医学含义，不是自动检测得分 |
 
 不在草稿、图片与记忆中放真实患者姓名、手机号、病历或可识别照片。脚本不能验证 URL 实际支持主张，也不能检出所有药物、设备和图像违规；审核是必需步骤。
+
+正文检查分两层：用户明确退稿的原句和形式规则进入 `errors`，须修改后才能归档；泛化的重复劝导、对比句与抒情结尾进入 `style_warnings`，应逐项结合上下文审阅，不能机械删除“可能、就诊、评估”等词。警告不自动判定违规；已完成编辑且确有信息的句子可保留，在内部 `review_notes` 说明。`check` 和 `archive` 返回警告，归档清单保留警告但正文不附带。没有警告也不代表文风合格。
+
+新增 `review.editorial` 只约束新交付：旧清单与历史不重写、不失效，不改记忆版本或阈值。运行新版本前需同步文章与标题两个 Skill；旧草稿须实际完成编辑后补填审核，不能批量预填 true。
+
+`review_notes` 是仅供草稿使用的编辑过程笔记，归档时不写入 Markdown、manifest 或压缩记忆。未核实的医学主张必须先解决或从正文删除，不能仅在笔记里标注后放行。
 
 图像校验检查真实文件格式、容器边界、尺寸；PNG 额外检查 CRC、解压流和扫描行，JPEG/WebP 不包含完整像素解码器。因此即使程序通过，Agent 仍须实际打开图片确认可显示、文字准确、无脸无品牌且合规，不能仅靠文件头填写 `visual=true`。单张文件不超过 50 MiB，PNG 解压数据不超过 100 MiB。
 
